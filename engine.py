@@ -482,6 +482,8 @@ def match_and_deliver(event):
     entry_text, entry_at = None, None  # fetched once, only if a sub needs it
     matched = 0
     for handle in handles:
+        if event.get("agent_id") == handle:
+            continue  # a voice never notifies its own author
         ear = ear_block(handle)
         if not ear:
             continue
