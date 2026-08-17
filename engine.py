@@ -373,12 +373,22 @@ def send_email(addr, subject, body):
 
 
 def send_ntfy(topic, title, body, url):
+    """The public ntfy.sh answers datacenter egress slowly at times — one
+    patient attempt, one retry, and a full-URL topic can point anywhere."""
     base, t = (topic.rsplit("/", 1) if "://" in topic else (NTFY_BASE, topic))
     payload = {"topic": t, "title": title, "message": body, "click": url}
-    req = urllib.request.Request(base, data=json.dumps(payload).encode(),
-                                 headers={"content-type": "application/json"})
-    with urllib.request.urlopen(req, timeout=10) as r:
-        r.read()
+    data = json.dumps(payload).encode()
+    for attempt in (1, 2):
+        try:
+            req = urllib.request.Request(
+                base, data=data, headers={"content-type": "application/json"})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                r.read()
+            return
+        except Exception:
+            if attempt == 2:
+                raise
+            time.sleep(2)
 
 
 def send_webpush(handle, subs, title, body, url):
