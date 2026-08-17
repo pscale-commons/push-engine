@@ -113,6 +113,9 @@ PUSH_MIN_S = int(os.environ.get("PUSH_MIN_S", "120"))
 VERIFY_FAILS_MAX = 5  # failed passphrase proofs per handle per hour -> 429
 
 WEBPUSH_READY = bool(webpush and VAPID_PRIVATE and VAPID_PUBLIC)
+# Stamped once per process — /health carries it so a deploy-wait can tell the
+# new process from the old one (both answer healthy during the swap).
+BOOT_TS = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 _seen = {}            # dedup: event key -> monotonic ts (pruned by size)
 _SEEN_MAX = 512
@@ -721,7 +724,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("", "/health"):
             self._send(200, {
                 "ok": True, "service": "push-engine (the beach reaches people)",
-                "beach": BEACH, "enrolled": len(_store_load()),
+                "boot": BOOT_TS, "beach": BEACH, "enrolled": len(_store_load()),
                 "channels": {"email": bool(GMAIL_ADDRESS and GMAIL_APP_PASSWORD),
                              "ntfy": True, "webpush": WEBPUSH_READY},
                 "fanout": len(FANOUT_URLS),
