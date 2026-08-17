@@ -70,12 +70,25 @@ import hmac
 import json
 import os
 import re
+import socket
 import struct
 import threading
 import time
 import urllib.error
 import urllib.request
 import zlib
+
+# Railway egress quirk: some destinations resolve AAAA-first and the container
+# cannot route IPv6 (Errno 101 to ntfy.sh, observed live 2026-08-17). Prefer
+# IPv4 for every outbound call; fall through untouched when only v6 exists.
+_orig_getaddrinfo = socket.getaddrinfo
+
+def _v4_first(host, port, family=0, *args, **kw):
+    res = _orig_getaddrinfo(host, port, family, *args, **kw)
+    v4 = [r for r in res if r[0] == socket.AF_INET]
+    return v4 or res
+
+socket.getaddrinfo = _v4_first
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote
 
@@ -328,14 +341,18 @@ STANDING_LINE = ("The engine never asks you for anything by email. End or "
 
 def _held(handle, kind, min_s):
     """The manners law: inside the window the event is counted, not sent;
-    the count rides the next note. No timers — silence costs nothing."""
-    now = time.monotonic()
+    the count rides the next note. No timers — silence costs nothing. The
+    window closes only on a send that WORKED (_sent marks it) — a failed
+    delivery must never silence the retry the next event brings."""
     last = _last_sent.get((handle, kind))
-    if last and now - last < min_s:
+    if last and time.monotonic() - last < min_s:
         _suppressed[(handle, kind)] = _suppressed.get((handle, kind), 0) + 1
         return True
-    _last_sent[(handle, kind)] = now
     return False
+
+
+def _sent(handle, kind):
+    _last_sent[(handle, kind)] = time.monotonic()
 
 
 def _fold_prefix(handle, kind):
@@ -409,6 +426,7 @@ def deliver(handle, kinds, title, body, url, test=False):
                            % (_fold_prefix(handle, "email"), body, url, handle,
                               STANDING_LINE % PUBLIC_URL))
                 sent.append("email")
+                _sent(handle, "email")
             except Exception as ex:
                 log("email to %s failed: %s" % (handle, str(ex)[:80]))
     if "ntfy" in kinds and e.get("ntfy"):
@@ -416,6 +434,7 @@ def deliver(handle, kinds, title, body, url, test=False):
             try:
                 send_ntfy(e["ntfy"], title, _fold_prefix(handle, "ntfy") + body, url)
                 sent.append("ntfy")
+                _sent(handle, "ntfy")
             except Exception as ex:
                 log("ntfy to %s failed: %s" % (handle, str(ex)[:80]))
     if "webpush" in kinds and e.get("webpush") and WEBPUSH_READY:
@@ -424,6 +443,7 @@ def deliver(handle, kinds, title, body, url, test=False):
                                 _fold_prefix(handle, "webpush") + body, url)
             if live:
                 sent.append("webpush")
+                _sent(handle, "webpush")
     return sent
 
 
