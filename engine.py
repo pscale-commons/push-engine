@@ -641,16 +641,39 @@ async function push() {
 
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
 
+# Browser doors (the mirror's holder pane, xstream) call /enroll, /test and
+# /vapid directly — same posture as the waker's CORS (its d4b4f72): a short
+# allowlist, credentials never involved, the beach never carries a secret.
+CORS_ORIGINS = [o.strip() for o in os.environ.get(
+    "ENGINE_CORS_ORIGINS",
+    "https://mirror.onen.ai,https://xstream.onen.ai,http://localhost:5173"
+).split(",") if o.strip()]
+
 
 # ── the wire ────────────────────────────────────────────────────────────────
 
 class Handler(BaseHTTPRequestHandler):
+    def _cors(self):
+        origin = self.headers.get("origin", "")
+        if origin in CORS_ORIGINS:
+            self.send_header("access-control-allow-origin", origin)
+            self.send_header("access-control-allow-methods",
+                             "GET, POST, DELETE, OPTIONS")
+            self.send_header("access-control-allow-headers", "content-type")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.send_header("content-length", "0")
+        self.end_headers()
+
     def _send(self, code, obj, ctype="application/json"):
         body = obj if isinstance(obj, bytes) else \
             (obj.encode() if isinstance(obj, str) else json.dumps(obj).encode())
         self.send_response(code)
         self.send_header("content-type", ctype)
         self.send_header("content-length", str(len(body)))
+        self._cors()
         self.end_headers()
         self.wfile.write(body)
 
