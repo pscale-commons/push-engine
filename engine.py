@@ -618,22 +618,39 @@ proven by your own key, removable the same way. First arrival founds your ear
 <input id="email" type="email" placeholder="you@example.com">
 <label>ntfy topic <small>(the topic you subscribed to in the ntfy app)</small></label>
 <input id="ntfy" placeholder="e.g. julie-hears-the-beach-x7">
+<p style="margin-bottom:.2em"><strong>Green switches a way of hearing ON.
+Grey only checks or undoes.</strong> Every button uses the handle and
+passphrase above; setting up is once per channel, per device for push.</p>
 <div>
   <button onclick="enrol()">hear by email / ntfy</button>
-  <button onclick="push()">enable push on this device</button>
+  <button onclick="push()">get notifications on this device</button>
 </div>
 <div>
   <button class="quiet" onclick="test()">send me a test</button>
   <button class="quiet" onclick="remove()">stop everything</button>
 </div>
-<p><small>Push works on Chrome, Edge, Firefox and Chromebooks directly. On
-iPhone/iPad: share &rarr; Add to Home Screen first, then open from there
-(iOS only pushes to installed pages). The engine never asks you for anything
-by email.</small></p>
+<p><small>Device notifications work on Chrome, Edge, Firefox, Chromebooks and
+Android directly — if the browser offers to &ldquo;Add to Home screen&rdquo;,
+that&rsquo;s optional there. On iPhone/iPad it is required: share &rarr; Add
+to Home Screen, then open from there (iOS only pushes to installed pages).
+The engine never asks you for anything by email.</small></p>
 <pre id="out">ready.</pre>
 <script>
 var out = document.getElementById('out');
-function say(x) { out.textContent = typeof x === 'string' ? x : JSON.stringify(x, null, 2); }
+function say(x) {
+  if (typeof x === 'string') { out.textContent = x; return; }
+  if (x && typeof x === 'object' && (x.detail || x.sent)) {
+    var line = (x.ok === false ? '✗ ' : '✓ ') + (x.detail || '');
+    if (Array.isArray(x.sent)) {
+      var names = x.sent.map(function (s) { return s === 'webpush' ? 'this device' : s; });
+      line += names.length ? ('\nsent via: ' + names.join(' + '))
+                           : '\nnothing was sent — no channel is switched on yet.';
+    }
+    out.textContent = line;
+    return;
+  }
+  out.textContent = JSON.stringify(x, null, 2);
+}
 function ident() { return { handle: document.getElementById('h').value.trim(),
                             passphrase: document.getElementById('p').value }; }
 function post(path, body, method) {
@@ -811,6 +828,7 @@ class Handler(BaseHTTPRequestHandler):
                        "the beach can reach you",
                        "This is the test you asked for — the engine heard you ask, and this is what a note feels like.",
                        (PUBLIC_URL or "") + "/push", test=True)
+        log("test for %s: sent via %s" % (handle, ",".join(sent) or "nothing"))
         return self._send(200, {"ok": True, "sent": sent or [],
                                 "detail": ("test sent via %s" % ", ".join(sent))
                                 if sent else "no channel is enrolled (or none is configured server-side)"})
