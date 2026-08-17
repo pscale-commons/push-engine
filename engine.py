@@ -785,6 +785,8 @@ class Handler(BaseHTTPRequestHandler):
             else base64.b64encode(raw[:256]).decode()
         if seen_before(key):
             return self._send(200, {"ok": True, "dedup": True})
+        log("event: %s slot %s by %s" % (pool or "(no pool)", slot or "-",
+                                         payload.get("agent_id") or "anon"))
         fanout(raw)  # the bus duty first — downstream sees the beach's bytes
         if pool.startswith("pool:"):
             event = {"origin": origin, "pool": pool, "slot": slot,
