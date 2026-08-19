@@ -324,6 +324,13 @@ def match(sub, handle, event, entry_text, entry_at):
         needle = (param or handle).lower()
         if needle and needle in (entry_text or "").lower():
             return "named “%s”" % (param or handle)
+    elif kind == "room":
+        # The fourth kind, added 2026-08-17 by demonstrated need (the mirror's
+        # pool chips ARE rooms): any voice landing in the named pool, no text
+        # or address test. parlour stays the special case of your own room.
+        target = param if param.startswith("pool:") else ("pool:%s" % param)
+        if param and event["pool"] == target:
+            return "a voice in %s" % target
     elif kind == "located":
         parts = param.split()
         pool_filter, prefix = (parts[0], parts[1] if len(parts) > 1 else "") \
