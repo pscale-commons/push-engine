@@ -297,13 +297,30 @@ def ear_block(handle):
 
 
 def subscriptions(ear):
-    """Digit positions holding {1: kind, ...} — a plain-prose position is a
-    note to humans and never machine-read."""
+    """Watches, wherever they stand (ways:push 1.1, adopted 2026-08-19):
+    a digit position whose 1 is a kind-word is a WATCH — a leaf; a digit
+    position that is an object without one is a CATEGORY, named by its own
+    underscore, walked in the same way three levels deep (nine watches, or
+    eighty-one, or seven hundred twenty-nine — the fan law bounds each level,
+    depth carries the scale). Scale by depth, never by supernest: an ear is
+    the current tuning of an instrument, not a record. A plain-prose position
+    is a note to humans and never machine-read."""
     subs = []
-    for k in sorted(k for k in (ear or {}) if k.isdigit() and k != "0"):
-        v = ear[k]
-        if isinstance(v, dict) and str(v.get("1", "")).strip():
-            subs.append(v)
+
+    def walk(node, depth):
+        if depth > 3 or not isinstance(node, dict):
+            return
+        for k in sorted(k for k in node if k.isdigit() and k != "0"):
+            v = node[k]
+            if not isinstance(v, dict):
+                continue
+            kind = v.get("1", "")
+            if isinstance(kind, str) and kind.strip():
+                subs.append(v)
+            else:
+                walk(v, depth + 1)
+
+    walk(ear or {}, 1)
     return subs
 
 

@@ -36,6 +36,9 @@ BLOCKS = {
               "3": "all"},
         "4": {"_": "following the quiet room", "1": "room",
               "2": "pool:quietroom", "3": "all"},
+        "5": {"_": "the desk — places I tend",
+              "1": {"_": "the desk room matters to me", "1": "room",
+                    "2": "pool:deskroom", "3": "all"}},
     },
     "ear:openhand": {"_": "An ear left unlocked."},
     "pool:testa": {"7": {"_": "a quiet hello for the parlour", "1": "visitor",
@@ -49,6 +52,9 @@ BLOCKS = {
     "pool:quietroom": {"2": {"_": "nothing about anyone in particular",
                               "1": "stranger", "2": "",
                               "3": "2026-08-17T09:04:00Z"}},
+    "pool:deskroom": {"3": {"_": "a note left on the desk",
+                             "1": "stranger", "2": "",
+                             "3": "2026-08-17T09:05:00Z"}},
 }
 LOCKS = {"ear:testa": "key-testa"}
 HITS = {"fanout": [], "ntfy": []}
@@ -274,6 +280,16 @@ def main():
                        {"x-pool-webhook-secret": SECRET})
         check("room watch fires on any voice there",
               wait_deliveries(4) and "a voice in pool:quietroom" in HITS["ntfy"][3].get("message", ""),
+              str(HITS["ntfy"][-1:]))
+
+        print("category depth")
+        time.sleep(2.1)
+        code, r = http("POST", E + "/event",
+                       {"origin": "127.0.0.1:%d" % MOCK_PORT, "pool": "pool:deskroom",
+                        "slot": "3", "agent_id": "stranger", "ts": "t"},
+                       {"x-pool-webhook-secret": SECRET})
+        check("a watch inside a category fires",
+              wait_deliveries(5) and "a voice in pool:deskroom" in HITS["ntfy"][4].get("message", ""),
               str(HITS["ntfy"][-1:]))
 
         print("foreign origin + removal")
