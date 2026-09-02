@@ -39,6 +39,8 @@ BLOCKS = {
         "5": {"_": "the desk — places I tend",
               "1": {"_": "the desk room matters to me", "1": "room",
                     "2": "pool:deskroom", "3": "all"}},
+        "6": {"_": "my agent waking reaches me", "1": "wake", "2": "eggy",
+              "3": "all"},
     },
     "ear:openhand": {"_": "An ear left unlocked."},
     "pool:testa": {"7": {"_": "a quiet hello for the parlour", "1": "visitor",
@@ -312,6 +314,30 @@ def main():
         check("a watch inside a category fires",
               wait_deliveries(5) and "a voice in pool:deskroom" in HITS["ntfy"][4].get("message", ""),
               str(HITS["ntfy"][-1:]))
+
+        print("wake kind — a service event, matched and never fanned out")
+        time.sleep(2.1)
+        fan_before = len(HITS["fanout"])
+        wake_ev = {"origin": "127.0.0.1:%d" % MOCK_PORT, "kind": "wake",
+                   "agent": "eggy", "ringer": "visitor", "status": "rest",
+                   "ts": "2026-09-02T14:00:00Z"}
+        code, r = http("POST", E + "/event", wake_ev,
+                       {"x-pool-webhook-secret": SECRET})
+        check("wake event accepted", code == 200 and r.get("ok"), str(r))
+        check("wake watch fires on the holder's channels",
+              wait_deliveries(6) and "eggy woke" in HITS["ntfy"][5].get("title", ""),
+              str(HITS["ntfy"][-1:]))
+        time.sleep(0.3)
+        check("wake event fanned out to nothing (service, not beach-fired)",
+              len(HITS["fanout"]) == fan_before)
+        code, r = http("POST", E + "/event", wake_ev,
+                       {"x-pool-webhook-secret": SECRET})
+        check("wake replay deduped", r.get("dedup") is True, str(r))
+        code, r = http("POST", E + "/event",
+                       {"origin": "127.0.0.1:%d" % MOCK_PORT, "kind": "wake",
+                        "ringer": "x", "ts": "t"},
+                       {"x-pool-webhook-secret": SECRET})
+        check("wake event without an agent refused", code == 400, str(r))
 
         print("foreign origin + removal")
         code, r = http("POST", E + "/event",
