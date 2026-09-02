@@ -209,6 +209,7 @@ def main():
                   if (ln.count("'") % 2 == 1 and not ln.strip().startswith("//"))]
         check("no JS line leaves a string literal open", not broken,
               " | ".join(broken[:2]))
+        check("page carries the handle-prefill door", "[?&]handle=" in page)
 
         print("enrolment — proof, gate, founding")
         code, r = http("POST", E + "/enroll",

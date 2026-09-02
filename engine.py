@@ -814,6 +814,17 @@ async function flip(handle, w, kind, row) {
   say('✓ this watch now reaches you by ' + (value === 'all' ? 'every channel'
       : next.map(function (k) { return KIND_WORDS[k]; }).join(' + ')) + '.');
 }
+// Arriving with ?handle=<name> — a door's link, the mirror's you-card first —
+// prefills the handle and shows the watches straight away: viewing is public,
+// altering still takes the key typed above.
+(function () {
+  var m = /[?&]handle=([^&]+)/.exec(location.search);
+  if (m) {
+    document.getElementById('h').value =
+      decodeURIComponent(m[1].replace(/\\+/g, ' ')).trim();
+    watches();
+  }
+})();
 </script>
 """
 
