@@ -190,6 +190,26 @@ def main():
         code, _ = http("POST", E + "/event", {"pool": "pool:testa", "slot": "7"})
         check("event without secret refused", code == 403)
 
+        print("the push page")
+        with urllib.request.urlopen(E + "/push", timeout=10) as r:
+            page = r.read().decode()
+            check("push page serves", r.status == 200)
+        check("page carries the beach origin for ear reads/writes",
+              "http://127.0.0.1:%d" % MOCK_PORT in page and "{{BEACH}}" not in page)
+        check("page carries the watches section", "show my watches" in page)
+        # A \n typed unescaped in the Python page-string lands as a REAL
+        # newline inside a JS string literal and kills the whole script block
+        # (every button dead) — shipped live 2026-08-19, caught 2026-09-02.
+        # The page must carry the two-character escape, and no string literal
+        # may span a line break.
+        check("script strings carry escaped newlines, not real ones",
+              "\\nsent via" in page)
+        in_script = page.split("<script>", 1)[1].split("</script>", 1)[0]
+        broken = [ln for ln in in_script.splitlines()
+                  if (ln.count("'") % 2 == 1 and not ln.strip().startswith("//"))]
+        check("no JS line leaves a string literal open", not broken,
+              " | ".join(broken[:2]))
+
         print("enrolment — proof, gate, founding")
         code, r = http("POST", E + "/enroll",
                        {"handle": "testa", "passphrase": "wrong-key",
