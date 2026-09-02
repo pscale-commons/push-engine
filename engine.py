@@ -55,8 +55,10 @@ under the supplied passphrase (create-locked is the substrate's own R1) —
 the whole flow is one act: the holder types where to be reached, once.
 Unlike the waker, this service stores NO passphrase: proof happens at the
 door and only the channel addresses are kept (volume file, mode 600 — the
-same trust envelope as this process's env). The engine never asks anyone to
-subscribe; every email carries the standing line.
+same trust envelope as this process's env). /standing returns, by the same
+proof, which channel KINDS stand (booleans and a device count) — never an
+address. The engine never asks anyone to subscribe; every email carries the
+standing line.
 
 MANNERS. Per (handle, channel) minimum interval; events suppressed inside
 the window are counted and folded into the next note ("+N earlier") — a hot
@@ -669,7 +671,9 @@ PUSH_PAGE = """\
   button.quiet { background: #64748b; }
   pre { background: #f4f4f5; padding: .8em; border-radius: 6px; white-space: pre-wrap; word-break: break-word; }
   small { color: #555; }
+  a { color: #0f766e; }
 </style>
+<p style="margin:0 0 .4em"><a href="{{MIRROR}}">&larr; the mirror</a></p>
 <h1>the beach, in your ear</h1>
 <p>What you hear about is your own public declaration on the beach
 (<code>ear:&lt;handle&gt;</code>). <em>Where</em> you are reached lives only here,
@@ -682,17 +686,22 @@ proven by your own key, removable the same way. First arrival founds your ear
 <input id="email" type="email" placeholder="you@example.com">
 <label>ntfy topic <small>(the topic you subscribed to in the ntfy app)</small></label>
 <input id="ntfy" placeholder="e.g. julie-hears-the-beach-x7">
-<p style="margin-bottom:.2em"><strong>Green switches a way of hearing ON.
-Grey only checks or undoes.</strong> Every button uses the handle and
-passphrase above; setting up is once per channel, per device for push.</p>
+<p id="standing" style="margin:.6em 0 .2em"></p>
+<p style="margin-bottom:.2em"><strong>Every button acts the moment you tap it
+&mdash; there is no save.</strong> Filled fields are kept; empty fields change
+nothing. Each act proves your key against the beach first, then the line above
+says what now reaches you.</p>
 <div>
-  <button onclick="enrol()">hear by email / ntfy</button>
+  <button onclick="enrol()">keep email / ntfy</button>
   <button onclick="push()">get notifications on this device</button>
 </div>
 <div>
   <button class="quiet" onclick="test()">send me a test</button>
   <button class="quiet" onclick="remove()">stop everything</button>
 </div>
+<p style="margin:.3em 0 0"><small><a href="#" onclick="return stopChannel('email')">stop email</a>
+&middot; <a href="#" onclick="return stopChannel('ntfy')">stop ntfy</a>
+&mdash; deliberate acts; an empty field above never clears anything.</small></p>
 <p><small>Device notifications work on Chrome, Edge, Firefox, Chromebooks and
 Android directly — if the browser offers to &ldquo;Add to Home screen&rdquo;,
 that&rsquo;s optional there. On iPhone/iPad it is required: share &rarr; Add
@@ -734,14 +743,54 @@ function post(path, body, method) {
     .then(function (r) { return r.json(); }).then(say)
     .catch(function (e) { say('failed: ' + e); });
 }
+function standing() {
+  // The state line — which channel KINDS stand at the engine (never an
+  // address), by the same proof every act carries. Quiet on any failure.
+  var b = ident();
+  if (!b.handle || !b.passphrase) return;
+  fetch('/standing', { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.ok || !d.channels) return;
+      var c = d.channels;
+      var mark = function (on) { return on ? '✓' : '—'; };
+      document.getElementById('standing').innerHTML =
+        '<strong>you are reached by:</strong> device ' + mark(c.webpush > 0) +
+        (c.webpush > 1 ? ' (' + c.webpush + ' devices)' : '') +
+        ' · email ' + mark(c.email) + ' · ntfy ' + mark(c.ntfy);
+    }).catch(function () { /* quiet */ });
+}
 function enrol() {
   var b = ident();
-  b.email = document.getElementById('email').value.trim();
-  b.ntfy = document.getElementById('ntfy').value.trim();
-  post('/enroll', b);
+  var em = document.getElementById('email').value.trim();
+  var nt = document.getElementById('ntfy').value.trim();
+  if (!em && !nt) return say('type an email or an ntfy topic first — nothing was changed. (To stop a channel, the small links below are the deliberate act.)');
+  if (em) b.email = em;
+  if (nt) b.ntfy = nt;
+  post('/enroll', b).then(standing);
 }
-function remove() { post('/enroll', ident(), 'DELETE'); }
-function test() { post('/test', ident()); }
+function stopChannel(kind) {
+  var b = ident();
+  if (!b.handle || !b.passphrase) { say('stopping ' + kind + ' takes your handle and passphrase above.'); return false; }
+  b[kind] = '';
+  post('/enroll', b).then(standing);
+  return false;
+}
+function remove() {
+  post('/enroll', ident(), 'DELETE').then(function () {
+    document.getElementById('standing').textContent = '';
+  });
+}
+function test() {
+  post('/test', ident()).then(function () {
+    var t = out.textContent;
+    if (t.indexOf('✓') === 0) {
+      out.textContent = t + "\\n(a test rings EVERY enrolled channel on purpose — real notes follow the chips on each watch below.)";
+    }
+    standing();
+  });
+}
 function b64ToU8(s) {
   var pad = '='.repeat((4 - s.length % 4) % 4);
   var raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
@@ -761,6 +810,7 @@ async function push() {
       userVisibleOnly: true, applicationServerKey: b64ToU8(v.publicKey) });
     var b = ident(); b.webpush = sub.toJSON();
     await post('/enroll', b);
+    standing();
   } catch (e) { say('push setup failed: ' + e); }
 }
 // ── watches — field 3 of each ear position, edited here, landed on the beach.
@@ -925,7 +975,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/vapid":
             self._send(200, {"publicKey": VAPID_PUBLIC})
         elif path == "/push":
-            self._send(200, PUSH_PAGE.replace("{{BEACH}}", BEACH),
+            self._send(200,
+                       PUSH_PAGE.replace("{{BEACH}}", BEACH)
+                                .replace("{{MIRROR}}", MIRROR_URL),
                        "text/html; charset=utf-8")
         elif path == "/sw.js":
             self._send(200, SW_JS, "application/javascript")
@@ -1009,12 +1061,39 @@ class Handler(BaseHTTPRequestHandler):
                                 "detail": ("test sent via %s" % ", ".join(sent))
                                 if sent else "no channel is enrolled (or none is configured server-side)"})
 
+    def _standing(self):
+        """Which channel KINDS stand for a handle — booleans and a device
+        count, NEVER an address — by the same proof every act carries. The
+        page's 'you are reached by' line; the answer to a holder standing at
+        the page unsure what they have enabled."""
+        try:
+            b = json.loads(self._body_raw().decode() or "{}")
+        except Exception:
+            return self._send(400, {"ok": False, "detail": "unparseable body"})
+        handle = str(b.get("handle", "")).strip()
+        passphrase = str(b.get("passphrase", ""))
+        if not handle or not passphrase:
+            return self._send(400, {"ok": False,
+                                    "detail": "handle and passphrase are both needed"})
+        if _throttled(handle):
+            return self._send(429, {"ok": False, "detail": "too many failed proofs — wait an hour"})
+        ok, reason = prove_or_found(handle, passphrase)
+        if not ok:
+            return self._send(403, {"ok": False, "detail": reason})
+        e = _store_load().get(handle) or {}
+        return self._send(200, {"ok": True, "channels": {
+            "email": bool(e.get("email")),
+            "ntfy": bool(e.get("ntfy")),
+            "webpush": len(e.get("webpush") or [])}})
+
     def do_POST(self):
         path = self.path.split("?")[0].rstrip("/")
         if path == "/enroll":
             return self._enroll(remove=False)
         if path == "/test":
             return self._test()
+        if path == "/standing":
+            return self._standing()
         if path != "/event":
             return self._send(404, {"error": "not found"})
         got = self.headers.get("x-pool-webhook-secret", "")

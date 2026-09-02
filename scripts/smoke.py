@@ -212,6 +212,10 @@ def main():
         check("no JS line leaves a string literal open", not broken,
               " | ".join(broken[:2]))
         check("page carries the handle-prefill door", "[?&]handle=" in page)
+        check("page carries the way back to the mirror",
+              "https://mirror.onen.ai/mirror" in page and "{{MIRROR}}" not in page)
+        check("page carries the standing line and the stop links",
+              "you are reached by" in page and "stopChannel('email')" in page)
 
         print("enrolment — proof, gate, founding")
         code, r = http("POST", E + "/enroll",
@@ -226,6 +230,14 @@ def main():
                        {"handle": "openhand", "passphrase": "any",
                         "ntfy": "http://127.0.0.1:%d/ntfy/t-open" % MOCK_PORT})
         check("unlocked ear refused", code == 403 and "not locked" in r.get("detail", ""), str(r))
+        code, r = http("POST", E + "/standing",
+                       {"handle": "testa", "passphrase": "wrong-key"})
+        check("standing refused on a wrong key", code == 403, str(r))
+        code, r = http("POST", E + "/standing",
+                       {"handle": "testa", "passphrase": "key-testa"})
+        check("standing names kinds only",
+              code == 200 and r.get("channels") == {"email": False, "ntfy": True,
+                                                    "webpush": 0}, str(r))
         code, r = http("POST", E + "/enroll",
                        {"handle": "fresh", "passphrase": "fresh-key",
                         "ntfy": "http://127.0.0.1:%d/ntfy/t-fresh" % MOCK_PORT})
