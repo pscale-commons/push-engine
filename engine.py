@@ -33,7 +33,9 @@ shell to your ear. Three machine patterns (v1, extended only by need):
 Each digit position of ear:<handle> is one subscription:
   {_: the human sentence, 1: kind, 2: parameter, 3: channel kinds}.
 Field 3 names channel KINDS only ("email", "ntfy", "webpush", "all") — never
-an address. An address in a public block is a spam harvest.
+an address. An address in a public block is a spam harvest. The /push page
+edits field 3 per watch, browser → beach under the holder's own key — the
+engine serves the page and never touches a watch.
 
 CHANNELS ARE PRIVATE, SERVICE-SIDE. Where a person is reached lives only in
 this service's store, enrolled and removed by PROOF against the beach's own
@@ -658,6 +660,17 @@ Android directly — if the browser offers to &ldquo;Add to Home screen&rdquo;,
 that&rsquo;s optional there. On iPhone/iPad it is required: share &rarr; Add
 to Home Screen, then open from there (iOS only pushes to installed pages).
 The engine never asks you for anything by email.</small></p>
+<h2 style="font-size:1.05em;color:#0f766e;margin:1.4em 0 .2em">what you hear about &mdash; your watches</h2>
+<p style="margin:.2em 0 .5em"><small>Each watch says <em>whether</em> a place
+reaches you; its channels say <em>how</em>. Reading needs only your handle;
+changing a channel takes the passphrase above and lands in your own ear on the
+beach &mdash; the engine never touches a watch. &ldquo;device&rdquo; means the
+system notifications you switch on above, wherever you switched them on. When
+two watches match one voice, the union of their channels applies. To hear
+nothing from a place, end the watch where it stands (the bell, or the
+mirror&rsquo;s you-card) &mdash; a watch always keeps at least one channel.</small></p>
+<button class="quiet" onclick="watches()">show my watches</button>
+<div id="w"></div>
 <pre id="out">ready.</pre>
 <script>
 var out = document.getElementById('out');
@@ -667,8 +680,8 @@ function say(x) {
     var line = (x.ok === false ? '✗ ' : '✓ ') + (x.detail || '');
     if (Array.isArray(x.sent)) {
       var names = x.sent.map(function (s) { return s === 'webpush' ? 'this device' : s; });
-      line += names.length ? ('\nsent via: ' + names.join(' + '))
-                           : '\nnothing was sent — no channel is switched on yet.';
+      line += names.length ? ('\\nsent via: ' + names.join(' + '))
+                           : '\\nnothing was sent — no channel is switched on yet.';
     }
     out.textContent = line;
     return;
@@ -711,6 +724,95 @@ async function push() {
     var b = ident(); b.webpush = sub.toJSON();
     await post('/enroll', b);
   } catch (e) { say('push setup failed: ' + e); }
+}
+// ── watches — field 3 of each ear position, edited here, landed on the beach.
+// The read is public (an ear is the holder's own public declaration); the
+// write is one surgical spindle POST under the holder's key. The engine is
+// not in this loop at all.
+var BEACH = '{{BEACH}}';
+var KINDS = ['email', 'webpush', 'ntfy'];
+var KIND_WORDS = { email: 'email', webpush: 'device', ntfy: 'ntfy' };
+function kindsOf(node) {
+  var raw = String((node && node['3']) || 'all').trim().toLowerCase();
+  var named = raw.split(/[\\s,]+/).filter(function (w) { return w; });
+  if (!named.length || named.indexOf('all') >= 0) return KINDS.slice();
+  return KINDS.filter(function (k) { return named.indexOf(k) >= 0; });
+}
+function walkWatches(node, path, depth, out) {
+  // The engine's own walk, mirrored: a digit position whose 1 is a kind-word
+  // is a watch; an object without one is a category, entered up to depth 3.
+  if (depth > 3 || !node || typeof node !== 'object') return;
+  Object.keys(node).filter(function (k) { return /^[1-9]$/.test(k); }).sort()
+    .forEach(function (k) {
+      var v = node[k];
+      if (!v || typeof v !== 'object') return;
+      var kind = String(v['1'] || '').trim();
+      if (kind) out.push({ path: path + k, node: v });
+      else walkWatches(v, path + k, depth + 1, out);
+    });
+}
+async function watches() {
+  var handle = document.getElementById('h').value.trim();
+  var box = document.getElementById('w');
+  if (!handle) return say('type your handle first — reading your watches needs no passphrase.');
+  box.textContent = 'reading ear:' + handle + ' …';
+  var d;
+  try {
+    var r = await fetch(BEACH + '/.well-known/pscale-beach?block=' + encodeURIComponent('ear:' + handle));
+    if (r.status === 404) { box.textContent = 'no ear stands yet — enrolling above founds one (parlour + your name).'; return; }
+    d = await r.json();
+  } catch (e) { box.textContent = 'the beach did not answer: ' + e; return; }
+  if (d && typeof d === 'object' && d.block && !d['_']) d = d.block;
+  var list = [];
+  walkWatches(d, '', 1, list);
+  if (!list.length) { box.textContent = 'no watches stand on this ear yet — a bell in the mirror starts one.'; return; }
+  box.innerHTML = '';
+  list.forEach(function (w) { box.appendChild(watchRow(handle, w)); });
+}
+function watchRow(handle, w) {
+  var row = document.createElement('div');
+  row.style.cssText = 'margin:.6em 0;padding:.5em .7em;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px';
+  var p = document.createElement('div');
+  p.textContent = String(w.node['_'] || (w.node['1'] + ' ' + (w.node['2'] || ''))).trim();
+  row.appendChild(p);
+  var bar = document.createElement('div');
+  bar.style.marginTop = '.35em';
+  var on = kindsOf(w.node);
+  KINDS.forEach(function (k) {
+    var lit = on.indexOf(k) >= 0;
+    var b = document.createElement('button');
+    b.textContent = KIND_WORDS[k];
+    if (!lit) b.className = 'quiet';
+    b.style.cssText = 'font-size:.85em;padding:.3em .7em;margin:.1em .3em 0 0' + (lit ? '' : ';opacity:.55');
+    b.title = lit ? 'on — tap to stop hearing here by ' + KIND_WORDS[k]
+                  : 'off — tap to hear here by ' + KIND_WORDS[k];
+    b.onclick = function () { flip(handle, w, k, row); };
+    bar.appendChild(b);
+  });
+  row.appendChild(bar);
+  return row;
+}
+async function flip(handle, w, kind, row) {
+  var pass = document.getElementById('p').value;
+  if (!pass) return say('changing channels takes your passphrase — the same edit-latch as everything above.');
+  var on = kindsOf(w.node);
+  var next = on.indexOf(kind) >= 0
+    ? on.filter(function (k) { return k !== kind; })
+    : on.concat([kind]);
+  if (!next.length) return say('a watch always keeps at least one channel — to hear nothing from this place, end the watch where it stands.');
+  var value = next.length === KINDS.length ? 'all' : next.join(' ');
+  try {
+    var r = await fetch(BEACH + '/.well-known/pscale-beach?block=' + encodeURIComponent('ear:' + handle), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ block: 'ear:' + handle, spindle: w.path + '3', content: value, secret: pass })
+    });
+    var d = await r.json();
+    if (!r.ok || (d && d.error)) return say('✗ the beach refused: ' + ((d && d.error) || r.status));
+  } catch (e) { return say('✗ the write did not land: ' + e); }
+  w.node['3'] = value;
+  row.replaceWith(watchRow(handle, w));
+  say('✓ this watch now reaches you by ' + (value === 'all' ? 'every channel'
+      : next.map(function (k) { return KIND_WORDS[k]; }).join(' + ')) + '.');
 }
 </script>
 """
@@ -774,7 +876,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/vapid":
             self._send(200, {"publicKey": VAPID_PUBLIC})
         elif path == "/push":
-            self._send(200, PUSH_PAGE, "text/html; charset=utf-8")
+            self._send(200, PUSH_PAGE.replace("{{BEACH}}", BEACH),
+                       "text/html; charset=utf-8")
         elif path == "/sw.js":
             self._send(200, SW_JS, "application/javascript")
         elif path == "/manifest.json":
