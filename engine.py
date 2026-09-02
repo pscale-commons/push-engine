@@ -25,11 +25,17 @@ matches once.
 
 SUBSCRIPTIONS ARE PUBLIC BLOCKS. What a person watches is their own auditable
 declaration at ear:<handle> on the beach, in their own locked block — put the
-shell to your ear. Three machine patterns (v1, extended only by need):
+shell to your ear. Five machine patterns (extended only by demonstrated
+need, proposal-first — ways:push:5):
   parlour — a voice lands in pool:<my-handle>
   named   — my name (or a chosen word) appears in a landed voicing's text
   located — a voice lands bearing an address-of-attention under a digit-walk
             prefix I watch (the same prefix logic located pools use)
+  room    — any voice lands in a named pool I follow (2026-08-17)
+  wake    — my agent completes a funded wake; the waker announces it as a
+            {kind:"wake"} service event on this same wire, matched here and
+            never fanned out (2026-09-02, proposals/2026-09-02-wake-watch.md
+            at bsp-mcp)
 Each digit position of ear:<handle> is one subscription:
   {_: the human sentence, 1: kind, 2: parameter, 3: channel kinds}.
 Field 3 names channel KINDS only ("email", "ntfy", "webpush", "all") — never
@@ -578,6 +584,38 @@ def match_and_deliver(event):
     return matched
 
 
+def match_and_deliver_wake(event):
+    """The wake kind (proposals/2026-09-02-wake-watch.md at bsp-mcp): a
+    holder hears their agent waking through their own ear — a watch shaped
+    {1:"wake", 2:<agent handle>, 3: channel kinds}. Field 2 is required and
+    exact: hearing an agent is an explicit act, never a wildcard. The
+    agent's own handle never hears its own wake, and delivery rides the
+    same channels, manners and fold as every other note."""
+    matched = 0
+    for handle in sorted(_store_load().keys()):
+        if handle == event["agent"]:
+            continue
+        ear = ear_block(handle)
+        if not ear:
+            continue
+        kinds = set()
+        for sub in subscriptions(ear):
+            if str(sub.get("1", "")).strip().lower() != "wake":
+                continue
+            if str(sub.get("2", "") or "").strip() == event["agent"]:
+                kinds |= kinds_of(sub)
+        if not kinds:
+            continue
+        matched += 1
+        title = "%s woke" % event["agent"]
+        body = "rung by %s%s" % (event["ringer"] or "a voice",
+                                 (" — %s" % event["status"]) if event["status"] else "")
+        sent = deliver(handle, kinds, title, body, MIRROR_URL)
+        log("notified %s via %s (agent wake: %s)"
+            % (handle, ",".join(sent) or "nothing-due", event["agent"]))
+    return matched
+
+
 # ── the web-push proving ground — served by the engine itself ──────────────
 # The mirror is the production door (its own lane); this page settles
 # feasibility with zero coupling: one field per channel, the proof inline.
@@ -995,6 +1033,27 @@ class Handler(BaseHTTPRequestHandler):
         if origin and host_of(origin) != host_of(BEACH):
             log("event ignored: origin %s is not the pinned beach" % origin)
             return self._send(200, {"ok": True, "ignored": "foreign origin"})
+        kind = str(payload.get("kind", "") or "")
+        if kind == "wake":
+            # A SERVICE event — the waker announcing a completed wake
+            # (proposals/2026-09-02-wake-watch.md at bsp-mcp). Matched against
+            # wake watches, never fanned out: the bus duty covers only what
+            # the BEACH fired, and the waker must not receive its own
+            # announcement back.
+            agent = str(payload.get("agent", "") or "")
+            if not agent:
+                return self._send(400, {"error": "wake event without an agent"})
+            if seen_before("%s|wake|%s|%s" % (origin, agent,
+                                              str(payload.get("ts", "") or ""))):
+                return self._send(200, {"ok": True, "dedup": True})
+            log("wake event: %s (rung by %s)"
+                % (agent, payload.get("ringer") or "a voice"))
+            event = {"agent": agent,
+                     "ringer": str(payload.get("ringer", "") or ""),
+                     "status": str(payload.get("status", "") or "")}
+            threading.Thread(target=match_and_deliver_wake, args=(event,),
+                             daemon=True).start()
+            return self._send(200, {"ok": True})
         key = "%s|%s|%s" % (origin, pool, slot) if (pool and slot) \
             else base64.b64encode(raw[:256]).decode()
         if seen_before(key):
