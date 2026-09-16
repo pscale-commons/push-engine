@@ -151,6 +151,17 @@ def host_of(origin):
     return o.rstrip("/")
 
 
+def in_family(origin, beach):
+    """Is an origin the pinned beach's own, or one of its worlds? A table is
+    the apex host with a /w/<name> path; a sub-beach is a host beneath it
+    (urb.beach.<host>). Both are the beach's family and fire the same bus —
+    the doorbell for a character at a table rings through here (bsp-mcp
+    proposals/2026-09-16-the-characters-doorman.md); a foreign host is not.
+    Found live 2026-09-16: a table's first ring was dropped as 'foreign'."""
+    o, b = host_of(origin), host_of(beach)
+    return bool(b) and (o == b or o.startswith(b + "/w/") or o.endswith("." + b))
+
+
 def digits_of(addr):
     """A pscale address reduced to its digit walk — '3.3' and '33' and '3,3'
     are the same position; prefix matching runs on this form."""
@@ -1109,8 +1120,8 @@ class Handler(BaseHTTPRequestHandler):
         origin = str(payload.get("origin", ""))
         pool = str(payload.get("pool", ""))
         slot = str(payload.get("slot", ""))
-        if origin and host_of(origin) != host_of(BEACH):
-            log("event ignored: origin %s is not the pinned beach" % origin)
+        if origin and not in_family(origin, BEACH):
+            log("event ignored: origin %s is not the pinned beach's family" % origin)
             return self._send(200, {"ok": True, "ignored": "foreign origin"})
         kind = str(payload.get("kind", "") or "")
         if kind == "wake":
@@ -1140,7 +1151,10 @@ class Handler(BaseHTTPRequestHandler):
         log("event: %s slot %s by %s" % (pool or "(no pool)", slot or "-",
                                          payload.get("agent_id") or "anon"))
         fanout(raw)  # the bus duty first — downstream sees the beach's bytes
-        if pool.startswith("pool:"):
+        # Ears name rooms at the apex and the entry is read there: a world's
+        # voice rides the bus to the waker (a character's doorman) but is
+        # matched to nobody's ear until ears learn to name a world's rooms.
+        if pool.startswith("pool:") and (not origin or host_of(origin) == host_of(BEACH)):
             event = {"origin": origin, "pool": pool, "slot": slot,
                      "agent_id": str(payload.get("agent_id", "") or ""),
                      "ts": str(payload.get("ts", "") or "")}
